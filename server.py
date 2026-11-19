@@ -1,124 +1,76 @@
-"""MCP tools for researching app requirements and compatible devices."""
+"""Key-free MCP tools that prepare app-research and device-shopping links."""
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any, Literal
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
 from mcp.server.fastmcp import FastMCP
 
 SERVER_NAME = "app-level"
-BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
+GOOGLE_SEARCH_URL = "https://www.google.com/search"
+BING_SEARCH_URL = "https://www.bing.com/search"
 TRENDYOL_SEARCH_URL = "https://www.trendyol.com/sr"
-MAX_RESULTS_LIMIT = 10
 
 mcp = FastMCP(SERVER_NAME)
 
 
-def _validate_search_options(max_results: int) -> None:
-    if not 1 <= max_results <= MAX_RESULTS_LIMIT:
-        raise ValueError(f"max_results must be between 1 and {MAX_RESULTS_LIMIT}.")
-
-
-def _search_web(query: str, max_results: int) -> list[dict[str, str]]:
-    api_key = os.environ.get("BRAVE_SEARCH_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "BRAVE_SEARCH_API_KEY is not set. Add a Brave Search API key "
-            "to enable web research."
-        )
-
-    params = urlencode(
+def _search_links(query: str, purpose: str) -> list[dict[str, str]]:
+    return [
         {
-            "q": query,
-            "count": max_results,
-            "country": "TR",
-            "search_lang": "tr",
-            "safesearch": "moderate",
+            "provider": provider,
+            "purpose": purpose,
+            "query": query,
+            "url": f"{search_url}?{urlencode({'q': query})}",
         }
-    )
-    request = Request(
-        f"{BRAVE_SEARCH_URL}?{params}",
-        headers={
-            "Accept": "application/json",
-            "X-Subscription-Token": api_key,
-            "User-Agent": "app-level-mcp/1.0",
-        },
-    )
-
-    try:
-        with urlopen(request, timeout=15) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        raise RuntimeError(
-            f"Brave Search returned HTTP {exc.code}; check the API key and quota."
-        ) from exc
-    except URLError as exc:
-        raise RuntimeError(f"Brave Search request failed: {exc.reason}") from exc
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("Brave Search returned an invalid JSON response.") from exc
-
-    web_results = payload.get("web", {}).get("results", [])
-    results: list[dict[str, str]] = []
-    for item in web_results[:max_results]:
-        url = item.get("url")
-        title = item.get("title")
-        if not isinstance(url, str) or not url.startswith("https://"):
-            continue
-        if not isinstance(title, str):
-            continue
-        description = item.get("description", "")
-        results.append(
-            {
-                "title": title,
-                "url": url,
-                "description": description
-                if isinstance(description, str)
-                else "",
-            }
+        for provider, search_url in (
+            ("Google", GOOGLE_SEARCH_URL),
+            ("Bing", BING_SEARCH_URL),
         )
-    return results
+    ]
 
 
 @mcp.tool()
 def research_app_requirements(
     app_name: str,
     platform: Literal["auto", "mobile", "computer"] = "auto",
-    max_results: int = 5,
 ) -> dict[str, Any]:
-    """Find sourced minimum requirements and low-settings information for an app or game.
+    """Prepare browser-search links for app requirements and low-settings research.
 
-    Returns web search result snippets and source links for manual verification;
-    it does not invent or guarantee hardware requirements.
+    The MCP server does not fetch the web. An MCP host with browsing capability
+    can open these links, verify sources, and summarize the findings.
     """
     app_name = app_name.strip()
     if not app_name:
         raise ValueError("app_name must not be empty.")
     if len(app_name) > 120:
         raise ValueError("app_name must be 120 characters or fewer.")
-    _validate_search_options(max_results)
 
     platform_query = {
         "auto": "PC Windows Android iOS",
         "mobile": "Android iOS",
         "computer": "PC Windows",
     }[platform]
-    query = (
-        f'"{app_name}" {platform_query} minimum system requirements '
-        '"lowest settings" recommended hardware'
+    official_query = (
+        f'"{app_name}" {platform_query} official minimum system requirements'
     )
+    settings_query = (
+        f'"{app_name}" {platform_query} lowest settings performance requirements'
+    )
+    store_query = f'"{app_name}" {platform_query} app store requirements'
     return {
         "app_name": app_name,
         "platform": platform,
-        "query": query,
-        "sources": _search_web(query, max_results),
+        "research_links": [
+            *_search_links(official_query, "official_requirements"),
+            *_search_links(settings_query, "low_settings"),
+            *_search_links(store_query, "store_listings"),
+        ],
         "notice": (
-            "Search snippets are leads, not verified specifications. Open the "
-            "sources and prefer the app publisher's official requirements."
+            "These are search links, not fetched or verified results. Open them "
+            "in the MCP host's browser, cite the source URLs, and prefer the "
+            "publisher's official requirements."
         ),
     }
 
@@ -130,19 +82,17 @@ def search_trendyol_devices(
     minimum_ram_gb: int | None = None,
     minimum_storage_gb: int | None = None,
     budget_try: int | None = None,
-    max_results: int = 5,
 ) -> dict[str, Any]:
-    """Search Trendyol for devices using requirement-derived terms and constraints.
+    """Prepare Trendyol and web-search links for a device shortlist.
 
-    Search results are third-party listings; confirm current price, exact model,
-    specifications, and seller details on Trendyol before making a decision.
+    The MCP server does not fetch listings. An MCP host with browsing capability
+    can open links and check product pages, sellers, prices, and specifications.
     """
     search_terms = search_terms.strip()
     if not search_terms:
         raise ValueError("search_terms must not be empty.")
     if len(search_terms) > 160:
         raise ValueError("search_terms must be 160 characters or fewer.")
-    _validate_search_options(max_results)
     if minimum_ram_gb is not None and minimum_ram_gb < 1:
         raise ValueError("minimum_ram_gb must be at least 1.")
     if minimum_storage_gb is not None and minimum_storage_gb < 1:
@@ -161,18 +111,45 @@ def search_trendyol_devices(
 
     terms = " ".join(constraints)
     marketplace_url = f"{TRENDYOL_SEARCH_URL}?{urlencode({'q': terms})}"
-    query = f"site:trendyol.com {terms}"
+    web_query = f"site:trendyol.com {terms}"
     return {
         "marketplace": "Trendyol",
         "search_terms": terms,
         "search_url": marketplace_url,
-        "sources": _search_web(query, max_results),
+        "research_links": _search_links(web_query, "marketplace_listings"),
         "notice": (
-            "Listings and snippets can be stale or incomplete. Verify the exact "
-            "model, seller, price, and specifications on the linked product page."
+            "These are search links, not fetched listings. Verify the exact "
+            "model, seller, price, and specifications on each product page."
         ),
     }
 
 
+def main() -> None:
+    """Run over stdio locally or Streamable HTTP for a remote MCP client."""
+    transport = os.environ.get("APP_LEVEL_TRANSPORT", "stdio")
+    if transport not in {"stdio", "streamable-http"}:
+        raise ValueError("APP_LEVEL_TRANSPORT must be stdio or streamable-http.")
+
+    host = os.environ.get("APP_LEVEL_HOST", "127.0.0.1")
+    try:
+        port = int(os.environ.get("APP_LEVEL_PORT", "8000"))
+    except ValueError as exc:
+        raise ValueError("APP_LEVEL_PORT must be an integer.") from exc
+    if not 1 <= port <= 65535:
+        raise ValueError("APP_LEVEL_PORT must be between 1 and 65535.")
+
+    mcp.settings.host = host
+    mcp.settings.port = port
+    allowed_hosts = os.environ.get("APP_LEVEL_ALLOWED_HOSTS")
+    if allowed_hosts:
+        hosts = [
+            item.strip() for item in allowed_hosts.split(",") if item.strip()
+        ]
+        if not hosts:
+            raise ValueError("APP_LEVEL_ALLOWED_HOSTS must contain a host.")
+        mcp.settings.transport_security.allowed_hosts = hosts
+    mcp.run(transport=transport)
+
+
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    main()
