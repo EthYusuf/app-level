@@ -116,6 +116,10 @@ Bu depoda iki yeniden kullanılabilir ajan becerisi bulunur:
 
 Skill dosyaları Markdown biçimindedir. Bunları kullandığınız ajan platformunun skill/agent-skill dizinine ekleyin; platforma göre keşif yolu farklı olabilir.
 
+## LinkedIn lansman belgesi
+
+İngilizce, paylaşılmaya hazır proje tanıtımı ve LinkedIn post taslağı için [`LINKEDIN_LAUNCH.md`](LINKEDIN_LAUNCH.md) dosyasına bakın.
+
 ## Açık kaynak ve gizlilik
 
 - Proje MIT lisansıyla yayımlanmıştır; ayrıntı: [`LICENSE.md`](LICENSE.md).
